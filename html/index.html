@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rule 110 WASM</title>
+  <style>
+    .ca-row {
+      display: grid;
+      grid-auto-flow: column;
+      grid-auto-columns: 20px;
+      gap: 1px;
+      width: max-content;
+    }
+
+    .ca-cell {
+      aspect-ratio: 1;
+      background-color: white;
+      border: 1px solid #ccc;
+    }
+
+    .ca-cell.alive {
+      background-color: black;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="row" class="ca-row"></div>
+  <button id="next">Next Config</button>
+  <button id="play_pause">Play</button>
+
+  <script type="module">
+    const wasm = await WebAssembly.instantiateStreaming(fetch('./rule_110.wasm'));
+    const rule110 = wasm.instance.exports;
+    // Create a view of the WebAssembly memory as a Uint8Array.
+    const buffer = new Uint8Array(rule110.mem.buffer, 0, 24);
+  
+    const row = document.getElementById('row');
+
+    let timer = null;
+
+    function build() {
+      row.replaceChildren();
+      for (let i = 0; i < buffer.length; i++) {
+        const cell = document.createElement('div');
+        cell.className = 'ca-cell';
+        row.appendChild(cell);
+      }
+    }
+
+    function render() {
+      const cells = row.children;
+      for (let i = 0; i < buffer.length; i++) {
+        cells[i].classList.toggle('alive', buffer[i] === 1);
+      }
+    }
+
+    function init() {
+      rule110.init_cells();
+      build();
+      render();
+    }
+
+    function stepOnce() {
+      rule110.next_config();
+      render();
+    }
+
+    function play() {
+      if (timer !== null) return;
+      timer = setInterval(stepOnce, 250);
+    }
+
+    function pause() {
+      clearInterval(timer);
+      timer = null;
+    }
+
+    document.getElementById("next").addEventListener("click", () => {
+      rule110.next_config();
+      render();
+    });
+
+    const play_pause = document.getElementById("play_pause");
+    
+    play_pause.addEventListener("click", () => {
+      if (timer === null) {
+        play();
+        play_pause.textContent = "Pause";
+      } else {
+        pause();
+        play_pause.textContent = "Play";
+      }
+    });
+
+    init();
+  </script>
+</body>
+</html>
