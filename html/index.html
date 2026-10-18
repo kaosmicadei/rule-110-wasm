@@ -28,6 +28,7 @@
 <body>
   <div id="row" class="ca-row"></div>
   <button id="next">Next Config</button>
+  <button id="reset">Reset</button>
   <button id="play_pause">Play</button>
 
   <script type="module">
@@ -83,20 +84,34 @@
       timer = null;
     }
 
+    function reset() {
+      rule110.set_seed(Math.floor(Math.random() * 123456789 + 1));
+      rule110.init_cells();
+      build();
+      render();
+    }
+
     document.getElementById("next").addEventListener("click", () => {
       rule110.next_config();
       render();
     });
+    
+    document.getElementById("reset").addEventListener("click", () => {
+      reset();
+    });
 
     const play_pause = document.getElementById("play_pause");
-    
     play_pause.addEventListener("click", () => {
       if (timer === null) {
         play();
         play_pause.textContent = "Pause";
+        document.getElementById("next").disabled = true;
+        document.getElementById("reset").disabled = true;
       } else {
         pause();
         play_pause.textContent = "Play";
+        document.getElementById("next").disabled = false;
+        document.getElementById("reset").disabled = false;
       }
     });
 
