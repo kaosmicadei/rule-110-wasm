@@ -8,7 +8,7 @@
     .ca-row {
       display: grid;
       grid-auto-flow: column;
-      grid-auto-columns: 20px;
+      grid-auto-columns: 32px;
       gap: 1px;
       width: max-content;
     }
@@ -33,16 +33,21 @@
   <script type="module">
     const wasm = await WebAssembly.instantiateStreaming(fetch('./rule_110.wasm'));
     const rule110 = wasm.instance.exports;
+    window.rule110 = rule110;
+
+    const num_cells = rule110.num_cells;
+    const buffer_size = 2 * num_cells;
+
     // Create a view of the WebAssembly memory as a Uint8Array.
-    const buffer = new Uint8Array(rule110.mem.buffer, 0, 24);
-  
+    const buffer = new Uint8Array(rule110.mem.buffer, 0, buffer_size);
+    window.buffer = buffer;
     const row = document.getElementById('row');
 
     let timer = null;
 
     function build() {
       row.replaceChildren();
-      for (let i = 0; i < buffer.length; i++) {
+      for (let i = 0; i < num_cells; i++) {
         const cell = document.createElement('div');
         cell.className = 'ca-cell';
         row.appendChild(cell);
@@ -51,8 +56,9 @@
 
     function render() {
       const cells = row.children;
-      for (let i = 0; i < buffer.length; i++) {
-        cells[i].classList.toggle('alive', buffer[i] === 1);
+      const current_base = rule110.get_current_base();
+      for (let i = 0; i < num_cells; i++) {
+        cells[i].classList.toggle('alive', buffer[current_base + i] === 1);
       }
     }
 

@@ -11,21 +11,17 @@
 (module
   (memory (export "mem") 1)  ;; allocate 1 page of memory (64KiB)
 
+  (global $num_cells i32 (i32.const 24))    ;; fix the number of cells to 24
+  
+  ;; To make a copy-less version of the rule 1110, we set up two buffers in memory.
+  ;; Then, after each update, we can swap the roles of the two buffers by swapping
+  ;; the values of $buf_a and $buf_b.
+  (global $buf_a (mut i32) (i32.const 0))
+  (global $buf_b (mut i32) (i32.const 24))  
+  
   ;; We initialise the memory with a random sequence of cells. Each cell can be 
   ;; either 0 or 1.
-
-  ;; Base address in memory where the cells will be stored.
-  (global $cells_start i32 (i32.const 0))  ;; starting at address 0
-
-  ;; Address in memory where the first buffer stops. (exclusive)
-  (global $cells_stop i32 (i32.const 24))  ;; for example, 24 cells
-
-  ;; Base address in memory where the auxiliary cells will be stored.
-  (global $aux_cells_start i32 (i32.const 24))
-
-  ;; Address in memory where the second buffer stops.
-  (global $aux_cells_stop i32 (i32.const 48))
-  
+  ;;
   ;; WebAssembly doesn't count with a random number generator, so we will implement
   ;; one ourselves using the Xorshift algorithm.
 
@@ -101,8 +97,8 @@
     (local $idx i32) ;; default value: 0 
 
     (loop $fill
-      ;; address = cells_start + idx
-      global.get $cells_start
+      ;; address = buff_a + idx
+      global.get $buf_a
       local.get $idx
       i32.add
 
@@ -118,15 +114,12 @@
       local.get $idx
       i32.const 1
       i32.add
-      local.set $idx
+      local.tee $idx  ;; copy without popping
 
-      ;; continue the loop if idx < cells_stop
-      local.get $idx
-      global.get $cells_stop
+      ;; loop while if idx < num_cells
+      global.get $num_cells
       i32.lt_u
       br_if $fill
-
-      ;; nothing to return here.
     )
   )
 
@@ -171,13 +164,14 @@
     i32.and
   )
 
-  (func $next
-    (local $idx i32)
-    (local $cell_idx i32)
-    (local $buff_idx i32)
+  (func $next_config
+    (local $idx i32)       ;; loop index
+    (local $stop i32)      ;; loop stop condition
 
-    (local $stop i32)
+    (local $cell_idx i32)  ;; index of the current cell in buffer A
+    (local $buff_idx i32)  ;; index of the current cell in buffer B
 
+ 
     ;; Hold the cell values.
     (local $left i32)
     (local $centre i32)
@@ -188,7 +182,7 @@
     local.set $idx
 
     ;; Like the first cell, the last cell is processed separately.
-    global.get $cells_stop
+    global.get $num_cells
     i32.const 1
     i32.sub
     local.set $stop
@@ -197,14 +191,14 @@
     (loop $main_loop
       ;; --- Update the indices ---
 
-      ;; cell_idx = base + idx
-      global.get $cells_start
+      ;; cell_idx = buf_a + idx
+      global.get $buf_a
       local.get $idx
       i32.add
       local.set $cell_idx
 
-      ;; aux_cells_idx = base_aux +  idx
-      global.get $aux_cells_start
+      ;; buff_idx = buf_b +  idx
+      global.get $buf_b
       local.get $idx
       i32.add
       local.set $buff_idx
@@ -230,7 +224,7 @@
       local.set $right
 
       ;; --- Compute new value ans store in the buffer --- 
-      local.get $buff_idx
+      local.get $buff_idx        ;; target address in the buffer
       ;; compute the new value
       local.get $left
       local.get $centre
@@ -248,7 +242,7 @@
 
       ;; Check if idx reached the stop condition
       local.get $stop
-      i32.lt_s
+      i32.lt_u
       br_if $main_loop
     )
 
@@ -256,26 +250,28 @@
 
       ;; Fetch values
       ;; left = cells[N-1] (last cell)
-      global.get $cells_stop
+      global.get $buf_a
+      global.get $num_cells
+      i32.add
       i32.const 1
       i32.sub
       i32.load8_u
       local.set $left
 
       ;; centre = cells[0]
-      global.get $cells_start
+      global.get $buf_a
       i32.load8_u
       local.set $centre
 
       ;; right = cells[1]
-      global.get $cells_start
+      global.get $buf_a
       i32.const 1
       i32.add
       i32.load8_u
       local.set $right
 
       ;; --- Compute and store on the buffer ---
-      global.get $aux_cells_start
+      global.get $buf_b
       ;; compute new value
       local.get $left
       local.get $centre
@@ -288,26 +284,32 @@
       
       ;; Fetch values
       ;; left = cells[N-2]  (second last cell)
-      global.get $cells_stop
+      global.get $buf_a
+      global.get $num_cells
+      i32.add
       i32.const 2
       i32.sub
       i32.load8_u
       local.set $left
 
       ;; centre = cells[N-1] (last cell)
-      global.get $cells_stop
+      global.get $buf_a
+      global.get $num_cells
+      i32.add
       i32.const 1
       i32.sub
       i32.load8_u
       local.set $centre
 
       ;; right = cells[first cell]
-      global.get $cells_start
+      global.get $buf_a
       i32.load8_u
       local.set $right
 
       ;; --- Compute and store on the buffer for the last cell ---
-      global.get $aux_cells_stop
+      global.get $buf_b
+      global.get $num_cells
+      i32.add
       i32.const 1
       i32.sub
       ;; compute new value
@@ -317,44 +319,24 @@
       call $new_cell
       ;; Store it in the last cell
       i32.store8
+
+      ;; --- Swap buffers ---
+      global.get $buf_a
+      global.get $buf_b
+      global.set $buf_a
+      global.set $buf_b
   )
 
-  (func $copy_from_buffer
-    (local $idx i32)
-
-    (loop $main_loop
-      ;; cells[idx] = buff[idx]
-      global.get $cells_start
-      local.get $idx
-      i32.add
-      ;; fetch value from buffer
-      global.get $aux_cells_start
-      local.get $idx
-      i32.add
-      i32.load8_u
-      ;; store it in the cells array
-      i32.store8
-
-      ;; Increment idx
-      local.get $idx
-      i32.const 1
-      i32.add
-      local.tee $idx  ;; copy without popping
-
-      ;; Check if idx reached the stop condition
-      global.get $cells_stop
-      i32.lt_s
-      br_if $main_loop
-    )
+  ;; To access the current configuration on the JS side, we need to update the base
+  ;; point of the current configuration in the buffer.
+  (func $get_current_base (result i32)
+    global.get $buf_a
   )
 
-  (func $next_config
-    call $next
-    call $copy_from_buffer
-  )
-  
   (export "rand" (func $rand))
   (export "set_seed" (func $set_seed))
   (export "init_cells" (func $init_cells))
   (export "next_config" (func $next_config))
+  (export "get_current_base" (func $get_current_base))
+  (export "num_cells" (global $num_cells))
 )
