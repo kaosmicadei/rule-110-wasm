@@ -333,7 +333,6 @@
     global.get $buf_a
   )
 
-  (export "rand" (func $rand))
   (export "set_seed" (func $set_seed))
   (export "init_cells" (func $init_cells))
   (export "next_config" (func $next_config))
