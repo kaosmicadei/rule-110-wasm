@@ -13,11 +13,12 @@
 
   (global $num_cells i32 (i32.const 24))    ;; fix the number of cells to 24
   
-  ;; To make a copy-less version of the rule 1110, we set up two buffers in memory.
-  ;; Then, after each update, we can swap the roles of the two buffers by swapping
-  ;; the values of $buf_a and $buf_b.
-  (global $buf_a (mut i32) (i32.const 0))
-  (global $buf_b (mut i32) (i32.const 24))  
+  ;; To make a copy-less version of the rule 1110, we set up two buffers, A and 
+  ;; B, in memory. One buffer will hold the current state while the other will 
+  ;; be used for the previous state. After every update, we swap the roles of
+  ;; the two buffers by swapping the addresses of their respective pointers.
+  (global $ptr_a (mut i32) (i32.const 0))
+  (global $ptr_b (mut i32) (i32.const 24))  
   
   ;; We initialise the memory with a random sequence of cells. Each cell can be 
   ;; either 0 or 1.
@@ -98,7 +99,7 @@
 
     (loop $fill
       ;; address = buff_a + idx
-      global.get $buf_a
+      global.get $ptr_a
       local.get $idx
       i32.add
 
@@ -191,14 +192,14 @@
     (loop $main_loop
       ;; --- Update the indices ---
 
-      ;; cell_idx = buf_a + idx
-      global.get $buf_a
+      ;; cell_idx = ptr_a + idx
+      global.get $ptr_a
       local.get $idx
       i32.add
       local.set $cell_idx
 
-      ;; buff_idx = buf_b +  idx
-      global.get $buf_b
+      ;; buff_idx = ptr_b +  idx
+      global.get $ptr_b
       local.get $idx
       i32.add
       local.set $buff_idx
@@ -250,7 +251,7 @@
 
       ;; Fetch values
       ;; left = cells[N-1] (last cell)
-      global.get $buf_a
+      global.get $ptr_a
       global.get $num_cells
       i32.add
       i32.const 1
@@ -259,19 +260,19 @@
       local.set $left
 
       ;; centre = cells[0]
-      global.get $buf_a
+      global.get $ptr_a
       i32.load8_u
       local.set $centre
 
       ;; right = cells[1]
-      global.get $buf_a
+      global.get $ptr_a
       i32.const 1
       i32.add
       i32.load8_u
       local.set $right
 
       ;; --- Compute and store on the buffer ---
-      global.get $buf_b
+      global.get $ptr_b
       ;; compute new value
       local.get $left
       local.get $centre
@@ -284,7 +285,7 @@
       
       ;; Fetch values
       ;; left = cells[N-2]  (second last cell)
-      global.get $buf_a
+      global.get $ptr_a
       global.get $num_cells
       i32.add
       i32.const 2
@@ -293,7 +294,7 @@
       local.set $left
 
       ;; centre = cells[N-1] (last cell)
-      global.get $buf_a
+      global.get $ptr_a
       global.get $num_cells
       i32.add
       i32.const 1
@@ -302,12 +303,12 @@
       local.set $centre
 
       ;; right = cells[first cell]
-      global.get $buf_a
+      global.get $ptr_a
       i32.load8_u
       local.set $right
 
       ;; --- Compute and store on the buffer for the last cell ---
-      global.get $buf_b
+      global.get $ptr_b
       global.get $num_cells
       i32.add
       i32.const 1
@@ -321,16 +322,16 @@
       i32.store8
 
       ;; --- Swap buffers ---
-      global.get $buf_a
-      global.get $buf_b
-      global.set $buf_a
-      global.set $buf_b
+      global.get $ptr_a
+      global.get $ptr_b
+      global.set $ptr_a
+      global.set $ptr_b
   )
 
   ;; To access the current configuration on the JS side, we need to update the base
   ;; point of the current configuration in the buffer.
   (func $get_current_base (result i32)
-    global.get $buf_a
+    global.get $ptr_a
   )
 
   (export "set_seed" (func $set_seed))
